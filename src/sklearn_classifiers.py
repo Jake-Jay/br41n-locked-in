@@ -21,24 +21,35 @@ from sklearn.ensemble import RandomForestClassifier
 datapath = Path('../data/')
 files = list(datapath.glob('*high*.mat'))
 
-file = files[0]
-mat = scipy.io.loadmat(file)
+# file = files[2]
+# mat = scipy.io.loadmat(file)
 
 # Seperate data
-fs = mat['fs'].squeeze()
-trig = mat['trig']
-eeg = mat['y']
+# fs = mat['fs'].squeeze()
+# trig = mat['trig']
+# eeg = mat['y']
 
+# Combine all datafiles
+eeg = np.empty((0,8))
+trig = np.empty((0,1))
+for file in files:
+    mat = scipy.io.loadmat(file)
+    eeg = np.concatenate((eeg, mat['y']), axis=0)
+    trig = np.concatenate((trig, mat['trig']), axis=0)
+
+fs = mat['fs'].squeeze()
 
 # %% Find the spacing of events
 event_idxs = np.nonzero(trig)[0]
 num_events = len(event_idxs)
+target_cnt = len(np.where(trig == 2)[0])
+non_target_cnt = len(np.where(trig == 1)[0])
 
 print(f'Number of events: {num_events}')
 print(f'Median number of samples between event: {np.median(np.diff(event_idxs))}')
 print(f'Mean number of samples between event: {np.mean(np.diff(event_idxs))}')
-print(f'Target count: {len(np.where(trig == 2)[0])}')
-print(f'Non target count: {len(np.where(trig == 1)[0])}')
+print(f'Target count: {target_cnt}')
+print(f'Non target count: {non_target_cnt}')
 print(f'Distractor count: {len(np.where(trig == -1)[0])}')
 
 
@@ -78,14 +89,14 @@ def powerband(data, fs=256, lc=0.1, hc=30):
     return simps(psd[idx_delta], dx=freq_res)
 
 # %% Calculate the power in relevant freq band
-tpbs = np.empty((60, 8))
-for event in range(60):
+tpbs = np.empty((target_cnt, 8))
+for event in range(target_cnt):
     for channel in range(8):
         tpbs[event, channel] = singularity(targets[:,channel,event], powerband)
 
 
-ntpbs = np.empty((60, 8))
-for event in range(60):
+ntpbs = np.empty((non_target_cnt, 8))
+for event in range(non_target_cnt):
     for channel in range(8):
         ntpbs[event, channel] = singularity(non_targets[:,channel,event], powerband)
 
@@ -98,31 +109,43 @@ Y = np.concatenate((
     axis=0
 )
 
-x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, shuffle=True)
+x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.4, shuffle=True)
+print(f'Dataset size: {X.shape[0]}')
+print(f'Train: {x_train.shape[0]}')
+print(f'Test: {x_test.shape[0]}')
 
 # %% LDA 
-# - P1_high2.mat - Accuracy: 0.54
+# - P1_high2.mat - Accuracy: 0.52
 
 model = LinearDiscriminantAnalysis()
 model.fit(x_train, y_train)
 
 # %% KNN
-# - P1_high2.mat - Accuracy: 0.708 (best accuracy ranging from num_nieghbors [1-9])
+# - P1_high2.mat - Accuracy: 0.52 (best accuracy ranging from num_nieghbors [1-9])
 
-n_neighbors=5
+n_neighbors=33
 weights = 'uniform'
 model = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights)
 model.fit(x_train, y_train)
 
 # %% SVM
-# - P1_high2.mat - Accuracy (kernel=poly): 0.83
-#                - Accuracy (kernel=linear/rbf): 0.75
+# - P1_high2.mat - Accuracy (kernel=poly): 0.52
+#                - Accuracy (kernel=linear): 0.66
+# - All high quality data combined - Accuracy (kernel=linear): 0.52
 
-model = SVC(gamma='scale', kernel='rbf')
+model = SVC(gamma='scale', kernel='linear')
 model.fit(X,Y)
 
 # %% Random Forest Classifier
+# - P1_high2.mat - Accuracy (max_depth=2, random_state=0): 0.83
+#                - Accuracy (max_depth=4, random_state=0): 0.979
+#                - Accuracy (max_depth=5, random_state=0): 1.0
+# - P1_high2.mat - Accuracy (max_depth=5, random_state=0): 1.0
+# - P2_high2.mat - Accuracy (max_depth=5, random_state=0): 0.979
+# - All high quality data combined - Accuracy (max_depth=10, random_state=0): 0.99
 
+model = RandomForestClassifier(max_depth=10, random_state=0)
+model.fit(X, Y)
 
 # %% Predict and plot confusion matrix
 
