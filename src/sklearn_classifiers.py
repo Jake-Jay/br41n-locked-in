@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import os
 import glob
+import pickle
 import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
@@ -18,16 +19,13 @@ from sklearn.ensemble import RandomForestClassifier
 
 
 #%% Read in data
+quality = 'all'    # high/low/all
 datapath = Path('../data/')
-files = list(datapath.glob('*high*.mat'))
-
-# file = files[2]
-# mat = scipy.io.loadmat(file)
-
-# Seperate data
-# fs = mat['fs'].squeeze()
-# trig = mat['trig']
-# eeg = mat['y']
+print(f'Reading in {quality.upper()} quality data')
+if quality != 'all':
+    files = list(datapath.glob(f'*{quality}*.mat'))
+else:
+    files = list(datapath.glob(f'*.mat'))
 
 # Combine all datafiles
 eeg = np.empty((0,8))
@@ -133,8 +131,9 @@ model.fit(x_train, y_train)
 #                - Accuracy (kernel=linear): 0.66
 # - All high quality data combined - Accuracy (kernel=linear): 0.52
 
-model = SVC(gamma='scale', kernel='linear')
+model = SVC(gamma='scale', kernel='rbf')
 model.fit(X,Y)
+filename = 'svm_model.pickle'
 
 # %% Random Forest Classifier
 # - P1_high2.mat - Accuracy (max_depth=2, random_state=0): 0.83
@@ -147,10 +146,15 @@ model.fit(X,Y)
 model = RandomForestClassifier(max_depth=10, random_state=0)
 model.fit(X, Y)
 
-# %% Predict and plot confusion matrix
+filename = 'rand_forest_model.pickle'
+pickle.dump(model, open(filename, 'wb'))
 
-predictions = model.predict(x_test)
-score = model.score(x_test, y_test)
+# %% Predict and plot confusion matrix
+# filename = 'rand_forest_model.pickle'
+loaded_model = pickle.load(open(filename, 'rb'))
+
+predictions = loaded_model.predict(x_test)
+score = loaded_model.score(x_test, y_test)
 cm = metrics.confusion_matrix(y_test, predictions)
 
 # Plot confusion matrix
