@@ -19,7 +19,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 
 #%% Read in data
-quality = 'all'    # high/low/all
+quality = 'high'    # high/low/all
 datapath = Path('../data/')
 print(f'Reading in {quality.upper()} quality data')
 if quality != 'all':
@@ -53,19 +53,27 @@ print(f'Distractor count: {len(np.where(trig == -1)[0])}')
 
 # %% Split up the signal
 window_size = 150
+delay = 0
 
 targets = np.empty((window_size, 8, 0))
 non_targets = np.empty((window_size, 8, 0))
 
 for event_idx in event_idxs:
     if trig[event_idx] == 1:
-        non_targets = np.append(non_targets, np.expand_dims(eeg[event_idx:event_idx + window_size], axis=2), axis = 2)
+        non_targets = np.append(
+            non_targets, 
+            np.expand_dims(eeg[event_idx + delay:event_idx + delay + window_size], axis=2),
+            axis = 2
+        )
     elif trig[event_idx] == 2:
-        targets = np.append(targets, np.expand_dims(eeg[event_idx:event_idx + window_size], axis=2), axis = 2)
+        targets = np.append(
+            targets,
+            np.expand_dims(eeg[event_idx + delay:event_idx + delay + window_size], axis=2),
+            axis = 2
+        )
 
 
 # %% Inspect data
-
 sample = targets[:,:,0]
 nsamples = sample.shape[0]
 T = nsamples * 1/fs
@@ -73,10 +81,10 @@ t = np.linspace(0, T, nsamples, endpoint=False)
 
 plt.figure()
 plt.plot(t, sample, label='Target raw data')
-# %% Singularity functions
 
+# %% Singularity functions
 def singularity(data, func):
-    """Reduce a time series to a single value using some function"""
+    """Reduce a time series to a single value/feature using some function"""
     return func(data)
 
 def powerband(data, fs=256, lc=0.1, hc=30):
@@ -87,23 +95,28 @@ def powerband(data, fs=256, lc=0.1, hc=30):
     return simps(psd[idx_delta], dx=freq_res)
 
 # %% Calculate the power in relevant freq band
-tpbs = np.empty((target_cnt, 8))
+tfeatures = np.empty((target_cnt, 8))
 for event in range(target_cnt):
     for channel in range(8):
-        tpbs[event, channel] = singularity(targets[:,channel,event], powerband)
+        rest_power = powerband(targets[:75, channel, event])
+        signal_power = powerband(targets[75:, channel, event])
+        tfeatures[event, channel] = signal_power/rest_power
+        # tfeatures[event, channel] = singularity(targets[:,channel,event], powerband)
 
-
-ntpbs = np.empty((non_target_cnt, 8))
+ntfeatures = np.empty((non_target_cnt, 8))
 for event in range(non_target_cnt):
     for channel in range(8):
-        ntpbs[event, channel] = singularity(non_targets[:,channel,event], powerband)
+        rest_power = powerband(non_targets[:75, channel, event])
+        signal_power = powerband(non_targets[75:, channel, event])
+        ntfeatures[event, channel] = signal_power/rest_power
+        # ntfeatures[event, channel] = singularity(non_targets[:,channel,event], powerband)
 
 
 # %% Create SK-ready data
-X = np.concatenate((tpbs, ntpbs), axis=0)
+X = np.concatenate((tfeatures, ntfeatures), axis=0)
 Y = np.concatenate((
-    np.ones((tpbs.shape[0], 1)), 
-    np.zeros((ntpbs.shape[0], 1))), 
+    np.ones((tfeatures.shape[0], 1)), 
+    np.zeros((ntfeatures.shape[0], 1))), 
     axis=0
 )
 
@@ -119,7 +132,6 @@ model = LinearDiscriminantAnalysis()
 model.fit(x_train, y_train)
 
 # %% KNN
-# - P1_high2.mat - Accuracy: 0.52 (best accuracy ranging from num_nieghbors [1-9])
 
 n_neighbors=33
 weights = 'uniform'
@@ -127,34 +139,26 @@ model = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights)
 model.fit(x_train, y_train)
 
 # %% SVM
-# - P1_high2.mat - Accuracy (kernel=poly): 0.52
-#                - Accuracy (kernel=linear): 0.66
-# - All high quality data combined - Accuracy (kernel=linear): 0.52
 
-model = SVC(gamma='scale', kernel='rbf')
-model.fit(X,Y)
-filename = 'svm_model.pickle'
+model = SVC(gamma='scale', kernel='linear')
+model.fit(x_train,y_train)
+# filename = 'svm_model.pickle'
 
 # %% Random Forest Classifier
-# - P1_high2.mat - Accuracy (max_depth=2, random_state=0): 0.83
-#                - Accuracy (max_depth=4, random_state=0): 0.979
-#                - Accuracy (max_depth=5, random_state=0): 1.0
-# - P1_high2.mat - Accuracy (max_depth=5, random_state=0): 1.0
-# - P2_high2.mat - Accuracy (max_depth=5, random_state=0): 0.979
-# - All high quality data combined - Accuracy (max_depth=10, random_state=0): 0.99
 
-model = RandomForestClassifier(max_depth=10, random_state=0)
-model.fit(X, Y)
+model = RandomForestClassifier(max_depth=15, random_state=0)
+model.fit(x_train, y_train)
 
-filename = 'rand_forest_model.pickle'
-pickle.dump(model, open(filename, 'wb'))
+# filename = 'rand_forest_model.pickle'
+# pickle.dump(model, open(filename, 'wb'))
 
 # %% Predict and plot confusion matrix
-# filename = 'rand_forest_model.pickle'
-loaded_model = pickle.load(open(filename, 'rb'))
 
-predictions = loaded_model.predict(x_test)
-score = loaded_model.score(x_test, y_test)
+# filename = 'rand_forest_model.pickle'
+# loaded_model = pickle.load(open(filename, 'rb'))
+
+predictions = model.predict(x_test)
+score = model.score(x_test, y_test)
 cm = metrics.confusion_matrix(y_test, predictions)
 
 # Plot confusion matrix
