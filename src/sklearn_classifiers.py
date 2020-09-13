@@ -15,6 +15,8 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn import metrics 
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
+from mne.decoding import CSP
 
 
 
@@ -140,7 +142,7 @@ model.fit(x_train, y_train)
 
 # %% SVM
 
-model = SVC(gamma='scale', kernel='linear')
+model = SVC(kernel='poly')
 model.fit(x_train,y_train)
 # filename = 'svm_model.pickle'
 
@@ -151,6 +153,7 @@ model.fit(x_train, y_train)
 
 # filename = 'rand_forest_model.pickle'
 # pickle.dump(model, open(filename, 'wb'))
+
 
 # %% Predict and plot confusion matrix
 
